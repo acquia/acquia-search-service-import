@@ -1,0 +1,25 @@
+{
+    "chmod": "0755",
+    "directories": ["src"],
+    "files": [
+        "bin/acquia-search-service-import.php",
+        "LICENSE"
+    ],
+    "finder": [
+        {
+            "name": "*.php",
+            "exclude": [
+                "phing",
+                "test",
+                "tests",
+                "Test",
+                "Tests",
+                "Tester"
+            ],
+            "in": "vendor"
+        }
+    ],
+    "main": "bin/acquia-search-service-import",
+    "output": "build/acquia-search-service-import.phar",
+    "stub": true
+}
