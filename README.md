@@ -37,3 +37,4 @@ latest stable version. The usage examples below assume this method of installati
     [info] Sent 4728/4728 documents to ILMV-27747.dev.mori
     [info] Sent 4728 documents to ILMV-27747.dev.mori
     [info] Index ILMV-27747.dev.mori has 4728 items in the index.
+
