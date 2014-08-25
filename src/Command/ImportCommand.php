@@ -66,8 +66,6 @@ class ImportCommand extends Command {
     $this->logger->info('Checking if the given subscription has Acquia Search indexes...');
     if (!empty($subscription['heartbeat_data']['search_cores']) && is_array($subscription['heartbeat_data']['search_cores'])) {
       $search_cores = $subscription['heartbeat_data']['search_cores'];
-      $count = count($subscription['heartbeat_data']['search_cores']);
-      $this->logger->info('Found ' . $count . ' Acquia Search indexes.');
     }
     else {
       $this->logger->error('No Search Cores found for given subscription');
@@ -120,6 +118,7 @@ class ImportCommand extends Command {
           unlink($file);
         }
         // Extract our data
+        $this->logger->info('Using ' . $path);
         try {
           $phar = new PharData($path);
           $phar->extractTo($tmp_path .'/' . $search_core_identifier); // extract all files
