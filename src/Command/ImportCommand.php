@@ -2,7 +2,12 @@
 
 namespace Acquia\Search\Import\Command;
 
+use FilesystemIterator;
+use PharData;
+use PSolr\Client\SolrClient;
+use RecursiveDirectoryIterator;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -13,54 +18,69 @@ use Acquia\Common\AcquiaServiceManager;
 
 
 class ImportCommand extends Command {
+
+  /**
+   * @var ConsoleLogger $logger
+   */
+  private $logger;
+
   protected function configure() {
     $this
       ->setName('import')
-      ->setDescription('Import a folder of exported Solr documents into an Acquia Search Index.')
-      ->addOption(
+      ->setDescription('Import a folder of exported Solr documents or tarball into an Acquia Search Index.')
+      ->addArgument(
         'index',
-        'r',
-        InputOption::VALUE_REQUIRED,
+        InputArgument::REQUIRED,
         'The full name of the index to import to. Eg.: ABCD-12345.'
       )
-      ->addOption(
+      ->addArgument(
         'path',
-        'p',
+        InputArgument::REQUIRED,
+        'the full path where the export was saved. This path should exist. Eg. /tmp/as_export/ABCD-12345. Can be a folder with xml files or a tarball.'
+      )
+      ->addOption(
+        'tmp',
+        't',
         InputOption::VALUE_REQUIRED,
-        'the full path where the export was saved. This path should exist.',
-        '/tmp/search_export/ABCD-1234'
+        'The tmp folder to use.',
+        '/tmp/as_import_tmp'
       )
     ;
   }
 
   protected function execute(InputInterface $input, OutputInterface $output) {
 
-    $index_given = $input->getOption('index');
-    $path = $input->getOption('path');
+    $index_given = $input->getArgument('index');
+    $path = $input->getArgument('path');
+    $tmp_path = $input->getOption('tmp');
 
     $verbosityLevelMap = array(
       'notice' => OutputInterface::VERBOSITY_NORMAL,
       'info' => OutputInterface::VERBOSITY_NORMAL,
     );
-    $logger = new ConsoleLogger($output, $verbosityLevelMap);
+    $this->logger = new ConsoleLogger($output, $verbosityLevelMap);
 
     // Get the Acquia Network Subscription
     $subscription = $this->getSubscription($output);
 
-    $logger->info('Checking if the given subscription has Acquia Search indexes...');
+    $this->logger->info('Checking if the given subscription has Acquia Search indexes...');
     if (!empty($subscription['heartbeat_data']['search_cores']) && is_array($subscription['heartbeat_data']['search_cores'])) {
       $search_cores = $subscription['heartbeat_data']['search_cores'];
       $count = count($subscription['heartbeat_data']['search_cores']);
-      $logger->info('Found ' . $count . ' Acquia Search indexes.');
+      $this->logger->info('Found ' . $count . ' Acquia Search indexes.');
     }
     else {
-      $logger->error('No Search Cores found for given subscription');
+      $this->logger->error('No Search Cores found for given subscription');
       exit();
     }
 
     /** @var \Symfony\Component\Console\Helper\DialogHelper $dialog */
     $dialog = $this->getHelperSet()->get('dialog');
-    $dialog->askConfirmation($output, 'Do you want to continue? (y/n). This will DELETE all contents from the ' . $index_given . ' index! ... : ', false);
+    $delete_all_content = $dialog->askConfirmation($output, 'Do you want to continue? (y/n). This will DELETE all contents from the ' . $index_given . ' index! ... : ', false);
+
+    if (!$delete_all_content) {
+      exit(1);
+    }
 
     // Loop through each cores.
     foreach ($search_cores as $search_core) {
@@ -79,20 +99,37 @@ class ImportCommand extends Command {
       /** @var \PSolr\Client\SolrClient $index */
       $index = $search->get($search_core_identifier);
 
-      // Delete all documents in the index
-      $response = $index->post('update', array("Content-Type: text/xml"), "<delete><query>*:*</query></delete>")->send();
-      if ($response->getStatusCode() !== 200) {
-        $logger->error('Index ' . $search_core_identifier . ' did not confirm on the deletion of the items.');
+      if (!file_exists($tmp_path)) {
+        mkdir($tmp_path, 0700);
+        $this->logger->info('Created the ' . $tmp_path . ' directory');
       }
-      // Force the deletion
-      $response = $index->post('update', array("Content-Type: text/xml"), "<commit/>")->send();
 
-      $response = $index->get('/admin/luke?wt=json&numTerms=0')->send()->json();
-      if (!isset($response['index']['numDocs']) || $response['index']['numDocs'] != 0) {
-        $logger->error('Index ' . $search_core_identifier . ' still has ' . $response['index']['numDocs'] . ' items in the index');
-        exit();
+      if (!file_exists($tmp_path .'/' . $search_core_identifier)) {
+        mkdir($tmp_path .'/' . $search_core_identifier, 0700);
+        $this->logger->info('Created the ' . $tmp_path .'/' . $search_core_identifier . ' directory');
       }
-      $logger->info('Index ' . $search_core_identifier . ' has ' . $response['index']['numDocs'] . ' items in the index. Proceeding...');
+
+      $pathinfo = pathinfo($path);
+
+      // If given path is a tarball, extract in our tmp directory
+      if (!is_dir($path) && substr(strrchr($path, "."), 1) == 'gz') {
+        // Clear the tmp directory
+        $this->logger->info('Clearing the ' . $tmp_path .'/' . $search_core_identifier . ' directory');
+        $directory_iterator = new RecursiveDirectoryIterator($tmp_path .'/' . $search_core_identifier, FilesystemIterator::SKIP_DOTS);
+        foreach ($directory_iterator as $file) {
+          unlink($file);
+        }
+        // Extract our data
+        try {
+          $phar = new PharData($path);
+          $phar->extractTo($tmp_path .'/' . $search_core_identifier); // extract all files
+          // Set our path to import from to the tmp path
+          $path = $tmp_path .'/' . $search_core_identifier;
+        }
+        catch (\Exception $e) {
+          $this->logger->error('Could not extract ' . $path . '.' . $e->getMessage());
+        }
+      }
 
       $count = 0;
       $total_count = 0;
@@ -100,6 +137,9 @@ class ImportCommand extends Command {
       $file_amount = count(glob($path . "/*.{xml}", GLOB_BRACE));
 
       $data = "";
+
+      // Delete all contents from a specified index
+      $this->deleteIndex($index, $search_core_identifier);
 
       // Loop over the folder and send in batches
       foreach (glob($path . "/*.{xml}", GLOB_BRACE) as $solr_document) {
@@ -117,9 +157,9 @@ class ImportCommand extends Command {
           // Send the data
           $response = $index->post('update', array("Content-Type: text/xml"), $data)->send();
           if ($response->getStatusCode() !== 200) {
-            $logger->error('Index ' . $search_core_identifier . ' did not confirm on the submission of the items.');
+            $this->logger->error('Index ' . $search_core_identifier . ' did not confirm on the submission of the items.');
           }
-          $logger->info("Sent " . $total_count . "/" . $file_amount . " documents to " . $index_given);
+          $this->logger->info("Sent " . $total_count . "/" . $file_amount . " documents to " . $index_given);
           $count = 0;
         }
 
@@ -127,14 +167,34 @@ class ImportCommand extends Command {
       // Also commit the last documents forcefully so we are done
       $response = $index->post('update', array("Content-Type: text/xml"), "<commit/>")->send();
       if ($response->getStatusCode() !== 200) {
-        $logger->error('Index ' . $search_core_identifier . ' did not confirm on the submission of the items.');
+        $this->logger->error('Index ' . $search_core_identifier . ' did not confirm on the submission of the items.');
       }
-      $logger->info("Sent " . $total_count . " documents to " . $index_given);
+      $this->logger->info("Sent " . $total_count . " documents to " . $index_given);
 
       $response = $index->get('/admin/luke?wt=json&numTerms=0')->send()->json();
-      $logger->info('Index ' . $search_core_identifier . ' has ' . $response['index']['numDocs'] . ' items in the index.');
+      $this->logger->info('Index ' . $search_core_identifier . ' has ' . $response['index']['numDocs'] . ' items in the index.');
     }
 
+  }
+
+  /**
+   * @param \PSolr\Client\SolrClient $index
+   */
+  public function deleteIndex(SolrClient $index, $search_core_identifier) {
+    // Delete all documents in the index
+    $response = $index->post('update', array("Content-Type: text/xml"), "<delete><query>*:*</query></delete>")->send();
+    if ($response->getStatusCode() !== 200) {
+      $this->logger->error('Index ' . $search_core_identifier . ' did not confirm on the deletion of the items.');
+    }
+    // Force the deletion
+    $response = $index->post('update', array("Content-Type: text/xml"), "<commit/>")->send();
+
+    $response = $index->get('/admin/luke?wt=json&numTerms=0')->send()->json();
+    if (!isset($response['index']['numDocs']) || $response['index']['numDocs'] != 0) {
+      $this->logger->error('Index ' . $search_core_identifier . ' still has ' . $response['index']['numDocs'] . ' items in the index');
+      exit();
+    }
+    $this->logger->info('Index ' . $search_core_identifier . ' has ' . $response['index']['numDocs'] . ' items in the index. Proceeding...');
   }
 
   /**

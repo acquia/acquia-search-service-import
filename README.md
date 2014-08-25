@@ -17,7 +17,11 @@ latest stable version. The usage examples below assume this method of installati
 
 ### To import to 1 specific index using a folder with exports
 
-    ./acquia-search-service-import import --index ABCD-1234 --path "/tmp/acquia_search_export"
+    ./acquia-search-service-import import ABCD-12345 "/tmp/acquia_search_export"
+
+### To import to 1 specific index using a tarball with exports
+
+    ./acquia-search-service-import import ABCD-12345 "/tmp/as_export/ABCD-12345/ABCD-12345-1408965924.tar.gz"
 
 ## Example
 
@@ -33,4 +37,3 @@ latest stable version. The usage examples below assume this method of installati
     [info] Sent 4728/4728 documents to ILMV-27747.dev.mori
     [info] Sent 4728 documents to ILMV-27747.dev.mori
     [info] Index ILMV-27747.dev.mori has 4728 items in the index.
-
