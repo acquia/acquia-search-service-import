@@ -23,9 +23,14 @@ latest stable version. The usage examples below assume this method of installati
 
     ./acquia-search-service-import import ABCD-12345 "/tmp/as_export/ABCD-12345/ABCD-12345-1408965924.tar.gz"
 
-### To import the latest tarball in a directory
+### To import the latest tarball in a directory based on the write time
 
     ./acquia-search-service-import import ILMV-27747.dev.mori `ls -t /tmp/as_export/ILMV-27747/ILMV-27747-*.tar.gz | head -1`
+
+### To import the latest tarball in a directory based on the filename
+
+    ./acquia-search-service-import import ILMV-27747.dev.mori `ls -t /tmp/as_export/ILMV-27747/ILMV-27747-*.tar.gz | sort -r | head -1`
+
 
 ## Example
 
