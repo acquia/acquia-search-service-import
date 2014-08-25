@@ -10,7 +10,7 @@ for exporting all or just one Acquia Search index attached to a subscription.
 
 ### Phar (Recommended for CLI use)
 
-Visit https://github.com/acquia/acquia-search-service-export/releases/latest and download the
+Visit https://github.com/acquia/acquia-search-service-import/releases/latest and download the
 latest stable version. The usage examples below assume this method of installation.
 
 ## Usage
