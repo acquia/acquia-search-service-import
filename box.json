@@ -3,7 +3,8 @@
     "directories": ["src"],
     "files": [
         "bin/acquia-search-service-import.php",
-        "LICENSE"
+        "LICENSE",
+        "vendor/guzzle/guzzle/src/Guzzle/Http/Resources/cacert.pem"
     ],
     "finder": [
         {

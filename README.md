@@ -31,7 +31,6 @@ latest stable version. The usage examples below assume this method of installati
 
     ./acquia-search-service-import import ILMV-27747.dev.mori `ls -t /tmp/as_export/ILMV-27747/ILMV-27747-*.tar.gz | sort -r | head -1`
 
-
 ## Example
 
     ./acquia-search-service-import import --index ILMV-27747.dev.mori --path "/tmp/search_export/ILMV-27747"
